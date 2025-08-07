@@ -1,4 +1,4 @@
-# LIIF
+# LIIF-Jittor By lzl
 
 This repository provides the Jittor reimplementation of LIIF, as introduced in the following paper:<br>
 [**Learning Continuous Image Representation with Local Implicit Image Function**](https://arxiv.org/abs/2012.09161)
