@@ -3,9 +3,9 @@ import time
 import shutil
 import math
 
-import torch
 import numpy as np
-from torch.optim import SGD, Adam
+import jittor as jt
+import jittor.optim as optim
 from tensorboardX import SummaryWriter
 
 
@@ -88,20 +88,54 @@ def compute_num_params(model, text=False):
         return tot
 
 
+# def make_optimizer(param_list, optimizer_spec, load_sd=False):
+#     Optimizer = {
+#         'sgd': SGD,
+#         'adam': Adam
+#     }[optimizer_spec['name']]
+#     optimizer = Optimizer(param_list, **optimizer_spec['args'])
+#     if load_sd:
+#         optimizer.load_state_dict(optimizer_spec['sd'])
+#     return optimizer
+
+
 def make_optimizer(param_list, optimizer_spec, load_sd=False):
+    # 选择优化器类型
     Optimizer = {
-        'sgd': SGD,
-        'adam': Adam
-    }[optimizer_spec['name']]
+        'sgd': optim.SGD,
+        'adam': optim.Adam
+    }[optimizer_spec['name'].lower()]
+
+    # 初始化优化器
+    #optimizer = Optimizer(param_list, **optimizer_spec['args'])
     optimizer = Optimizer(param_list, **optimizer_spec['args'])
+
+    # Jittor 不支持直接加载 state_dict，跳过此步骤
     if load_sd:
-        optimizer.load_state_dict(optimizer_spec['sd'])
+        print("[Warning] Jittor optimizers do not support load_state_dict(). Skipped.")
+
     return optimizer
 
 
+# def make_coord(shape, ranges=None, flatten=True):
+#     """ Make coordinates at grid centers.
+#     """
+#     coord_seqs = []
+#     for i, n in enumerate(shape):
+#         if ranges is None:
+#             v0, v1 = -1, 1
+#         else:
+#             v0, v1 = ranges[i]
+#         r = (v1 - v0) / (2 * n)
+#         seq = v0 + r + (2 * r) * torch.arange(n).float()
+#         coord_seqs.append(seq)
+#     ret = torch.stack(torch.meshgrid(*coord_seqs), dim=-1)
+#     if flatten:
+#         ret = ret.view(-1, ret.shape[-1])
+#     return ret
+
 def make_coord(shape, ranges=None, flatten=True):
-    """ Make coordinates at grid centers.
-    """
+    """Make coordinates at grid centers in Jittor."""
     coord_seqs = []
     for i, n in enumerate(shape):
         if ranges is None:
@@ -109,11 +143,15 @@ def make_coord(shape, ranges=None, flatten=True):
         else:
             v0, v1 = ranges[i]
         r = (v1 - v0) / (2 * n)
-        seq = v0 + r + (2 * r) * torch.arange(n).float()
+        seq = v0 + r + (2 * r) * jt.arange(n).float32()
         coord_seqs.append(seq)
-    ret = torch.stack(torch.meshgrid(*coord_seqs), dim=-1)
+
+    # Jittor 的 meshgrid 默认 behavior 是 indexing='ij'，与 torch 一致
+    mesh = jt.meshgrid(*coord_seqs)
+    ret = jt.stack(mesh, dim=-1)
+
     if flatten:
-        ret = ret.view(-1, ret.shape[-1])
+        ret = ret.reshape([-1, ret.shape[-1]])
     return ret
 
 
@@ -143,4 +181,18 @@ def calc_psnr(sr, hr, dataset=None, scale=1, rgb_range=1):
     else:
         valid = diff
     mse = valid.pow(2).mean()
-    return -10 * torch.log10(mse)
+    return -10 * jt.log(mse) / jt.log(jt.float32(10.0))
+
+class MultiStepLR:
+    def __init__(self, optimizer, milestones, gamma=0.1):
+        self.optimizer = optimizer
+        self.milestones = set(milestones)
+        self.gamma = gamma
+        self.last_epoch = -1
+
+    def step(self):
+        self.last_epoch += 1
+        if self.last_epoch in self.milestones:
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] *= self.gamma
+

@@ -4,8 +4,7 @@ import math
 from functools import partial
 
 import yaml
-import torch
-from torch.utils.data import DataLoader
+import jittor as jt
 from tqdm import tqdm
 
 import datasets
@@ -14,7 +13,7 @@ import utils
 
 
 def batched_predict(model, inp, coord, cell, bsize):
-    with torch.no_grad():
+    with jt.no_grad():
         model.gen_feat(inp)
         n = coord.shape[1]
         ql = 0
@@ -24,7 +23,7 @@ def batched_predict(model, inp, coord, cell, bsize):
             pred = model.query_rgb(coord[:, ql: qr, :], cell[:, ql: qr, :])
             preds.append(pred)
             ql = qr
-        pred = torch.cat(preds, dim=1)
+        pred = jt.concat(preds, dim=1)
     return pred
 
 
@@ -38,11 +37,15 @@ def eval_psnr(loader, model, data_norm=None, eval_type=None, eval_bsize=None,
             'gt': {'sub': [0], 'div': [1]}
         }
     t = data_norm['inp']
-    inp_sub = torch.FloatTensor(t['sub']).view(1, -1, 1, 1).cuda()
-    inp_div = torch.FloatTensor(t['div']).view(1, -1, 1, 1).cuda()
+    # inp_sub = torch.FloatTensor(t['sub']).view(1, -1, 1, 1).cuda()
+    # inp_div = torch.FloatTensor(t['div']).view(1, -1, 1, 1).cuda()
+    inp_sub = jt.array(t['sub']).float().reshape(1, -1, 1, 1)
+    inp_div = jt.array(t['div']).float().reshape(1, -1, 1, 1)
     t = data_norm['gt']
-    gt_sub = torch.FloatTensor(t['sub']).view(1, 1, -1).cuda()
-    gt_div = torch.FloatTensor(t['div']).view(1, 1, -1).cuda()
+    # gt_sub = torch.FloatTensor(t['sub']).view(1, 1, -1).cuda()
+    # gt_div = torch.FloatTensor(t['div']).view(1, 1, -1).cuda()
+    gt_sub = jt.array(t['sub']).float().reshape(1, 1, -1)
+    gt_div = jt.array(t['div']).float().reshape(1, 1, -1)
 
     if eval_type is None:
         metric_fn = utils.calc_psnr
@@ -64,7 +67,7 @@ def eval_psnr(loader, model, data_norm=None, eval_type=None, eval_bsize=None,
 
         inp = (batch['inp'] - inp_sub) / inp_div
         if eval_bsize is None:
-            with torch.no_grad():
+            with jt.no_grad():
                 pred = model(inp, batch['coord'], batch['cell'])
         else:
             pred = batched_predict(model, inp,
@@ -92,12 +95,13 @@ def eval_psnr(loader, model, data_norm=None, eval_type=None, eval_bsize=None,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config')
-    parser.add_argument('--model')
+    parser.add_argument('--config', default="configs/test/test-div2k-6.yaml")
+    parser.add_argument('--model', default="save/test_0/epoch-best.pth")
     parser.add_argument('--gpu', default='0')
     args = parser.parse_args()
 
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+    jt.flags.use_cuda = 1
 
     with open(args.config, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
@@ -105,13 +109,34 @@ if __name__ == '__main__':
     spec = config['test_dataset']
     dataset = datasets.make(spec['dataset'])
     dataset = datasets.make(spec['wrapper'], args={'dataset': dataset})
-    loader = DataLoader(dataset, batch_size=spec['batch_size'],
-        num_workers=8, pin_memory=True)
+    dataset.set_attrs(
+        batch_size=spec['batch_size'],
+        num_workers=8,
+        shuffle=False
+    )
 
-    model_spec = torch.load(args.model)['model']
-    model = models.make(model_spec, load_sd=True).cuda()
+    model = models.make({   #注意要根据自己的模型调整
+        'name': 'liif',
+        'args': {
+            'encoder_spec': {
+                'name': 'edsr-baseline',
+                'args': {
+                    'no_upsampling': True
+                }
+            },
+            'imnet_spec': {
+                'name': 'mlp',
+                'args': {
+                    'out_dim': 3,
+                    'hidden_list': [256, 256, 256, 256]
+                }
+            }
+        }
+    })
+    state_dict = jt.load(args.model)['model']
+    model.load_state_dict(state_dict)
 
-    res = eval_psnr(loader, model,
+    res = eval_psnr(dataset, model,
         data_norm=config.get('data_norm'),
         eval_type=config.get('eval_type'),
         eval_bsize=config.get('eval_bsize'),

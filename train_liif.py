@@ -25,22 +25,24 @@ import argparse
 import os
 
 import yaml
-import torch
-import torch.nn as nn
+import jittor as jt
+import jittor.nn as nn
+
 from tqdm import tqdm
-from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import MultiStepLR
+from jittor.dataset.dataset import DataLoader
+from utils import MultiStepLR
+
 
 import datasets
 import models
 import utils
 from test import eval_psnr
 
-
 def make_data_loader(spec, tag=''):
     if spec is None:
         return None
 
+    # 构建 dataset（保持不变）
     dataset = datasets.make(spec['dataset'])
     dataset = datasets.make(spec['wrapper'], args={'dataset': dataset})
 
@@ -48,10 +50,14 @@ def make_data_loader(spec, tag=''):
     for k, v in dataset[0].items():
         log('  {}: shape={}'.format(k, tuple(v.shape)))
 
-    loader = DataLoader(dataset, batch_size=spec['batch_size'],
-        shuffle=(tag == 'train'), num_workers=8, pin_memory=True)
-    return loader
+    # ✅ Jittor: 设置属性代替 PyTorch 的 DataLoader
+    dataset = dataset.set_attrs(
+        batch_size=spec['batch_size'],
+        shuffle=(tag == 'train'),
+        num_workers=8
+    )
 
+    return dataset  # ✅ Jittor 不需要 Dataloader，直接返回 Dataset 对象
 
 def make_data_loaders():
     train_loader = make_data_loader(config.get('train_dataset'), tag='train')
@@ -61,17 +67,22 @@ def make_data_loaders():
 
 def prepare_training():
     if config.get('resume') is not None:
-        sv_file = torch.load(config['resume'])
-        model = models.make(sv_file['model'], load_sd=True).cuda()
-        optimizer = utils.make_optimizer(
-            model.parameters(), sv_file['optimizer'], load_sd=True)
+        sv_file = jt.load(config['resume'])
+        model = models.make(config['model']).cuda()
+        model.load_state_dict(sv_file['model'])
+        optimizer = utils.make_optimizer(model.parameters(), config['optimizer'])
+        try:
+            optimizer.load_state_dict(sv_file['optimizer'])
+        except:
+            print("[Warning] Failed to load optimizer state, will use fresh optimizer")
         epoch_start = sv_file['epoch'] + 1
         if config.get('multi_step_lr') is None:
             lr_scheduler = None
         else:
             lr_scheduler = MultiStepLR(optimizer, **config['multi_step_lr'])
-        for _ in range(epoch_start - 1):
-            lr_scheduler.step()
+            # 更新学习率到正确的 epoch
+            for _ in range(epoch_start - 1):
+                lr_scheduler.step()
     else:
         model = models.make(config['model']).cuda()
         optimizer = utils.make_optimizer(
@@ -93,11 +104,11 @@ def train(train_loader, model, optimizer):
 
     data_norm = config['data_norm']
     t = data_norm['inp']
-    inp_sub = torch.FloatTensor(t['sub']).view(1, -1, 1, 1).cuda()
-    inp_div = torch.FloatTensor(t['div']).view(1, -1, 1, 1).cuda()
+    inp_sub = jt.array(t['sub'], dtype=jt.float32).reshape(1, -1, 1, 1)
+    inp_div = jt.array(t['div'], dtype=jt.float32).reshape(1, -1, 1, 1)
     t = data_norm['gt']
-    gt_sub = torch.FloatTensor(t['sub']).view(1, 1, -1).cuda()
-    gt_div = torch.FloatTensor(t['div']).view(1, 1, -1).cuda()
+    gt_sub = jt.array(t['sub'],dtype=jt.float32).reshape(1, 1, -1)
+    gt_div = jt.array(t['div'],dtype=jt.float32).reshape(1, 1, -1)
 
     for batch in tqdm(train_loader, leave=False, desc='train'):
         for k, v in batch.items():
@@ -111,9 +122,7 @@ def train(train_loader, model, optimizer):
 
         train_loss.add(loss.item())
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        optimizer.step(loss)
 
         pred = None; loss = None
 
@@ -151,7 +160,7 @@ def main(config_, save_path):
         t_epoch_start = timer.t()
         log_info = ['epoch {}/{}'.format(epoch, epoch_max)]
 
-        writer.add_scalar('lr', optimizer.param_groups[0]['lr'], epoch)
+        writer.add_scalar('lr', optimizer.lr, epoch)
 
         train_loss = train(train_loader, model, optimizer)
         if lr_scheduler is not None:
@@ -164,20 +173,22 @@ def main(config_, save_path):
             model_ = model.module
         else:
             model_ = model
-        model_spec = config['model']
-        model_spec['sd'] = model_.state_dict()
-        optimizer_spec = config['optimizer']
-        optimizer_spec['sd'] = optimizer.state_dict()
-        sv_file = {
-            'model': model_spec,
-            'optimizer': optimizer_spec,
-            'epoch': epoch
-        }
 
-        torch.save(sv_file, os.path.join(save_path, 'epoch-last.pth'))
+        model_state = model.state_dict()
+        optimizer_state = optimizer.state_dict()
+
+        # 2. 创建可序列化的保存字典
+        sv_file = {
+            'model': model_state,
+            'optimizer': optimizer_state,
+            'epoch': epoch,
+            'config': config,
+            # 其他需要保存的简单数据类型...
+        }
+        jt.save(sv_file, os.path.join(save_path, 'epoch-last.pkl'))
 
         if (epoch_save is not None) and (epoch % epoch_save == 0):
-            torch.save(sv_file,
+            jt.save(sv_file,
                 os.path.join(save_path, 'epoch-{}.pth'.format(epoch)))
 
         if (epoch_val is not None) and (epoch % epoch_val == 0):
@@ -194,7 +205,7 @@ def main(config_, save_path):
             writer.add_scalars('psnr', {'val': val_res}, epoch)
             if val_res > max_val_v:
                 max_val_v = val_res
-                torch.save(sv_file, os.path.join(save_path, 'epoch-best.pth'))
+                jt.save(sv_file, os.path.join(save_path, 'epoch-best.pth'))
 
         t = timer.t()
         prog = (epoch - epoch_start + 1) / (epoch_max - epoch_start + 1)
@@ -208,8 +219,8 @@ def main(config_, save_path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config')
-    parser.add_argument('--name', default=None)
+    parser.add_argument('--config',default="configs/train-div2k/train_edsr-baseline-liif.yaml")
+    parser.add_argument('--name', default="test_0")
     parser.add_argument('--tag', default=None)
     parser.add_argument('--gpu', default='0')
     args = parser.parse_args()

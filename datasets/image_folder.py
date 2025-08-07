@@ -5,9 +5,16 @@ from PIL import Image
 import pickle
 import imageio
 import numpy as np
-import torch
-from torch.utils.data import Dataset
-from torchvision import transforms
+#—————————————torch————————————————————
+# import torch
+# from torch.utils.data import Dataset
+# from torchvision import transforms
+#——————————————————————————————————————
+#——————————————————————————————————————
+import jittor as jt
+from jittor.dataset import Dataset
+from jittor import transform
+#——————————————————————————————————————
 
 from datasets import register
 
@@ -17,6 +24,7 @@ class ImageFolder(Dataset):
 
     def __init__(self, root_path, split_file=None, split_key=None, first_k=None,
                  repeat=1, cache='none'):
+        super().__init__()
         self.repeat = repeat
         self.cache = cache
 
@@ -50,8 +58,8 @@ class ImageFolder(Dataset):
                 self.files.append(bin_file)
 
             elif cache == 'in_memory':
-                self.files.append(transforms.ToTensor()(
-                    Image.open(file).convert('RGB')))
+                self.files.append(jt.array(transform.ToTensor()(
+                    Image.open(file).convert('RGB'))))
 
     def __len__(self):
         return len(self.files) * self.repeat
@@ -60,13 +68,14 @@ class ImageFolder(Dataset):
         x = self.files[idx % len(self.files)]
 
         if self.cache == 'none':
-            return transforms.ToTensor()(Image.open(x).convert('RGB'))
+            return jt.array(transform.ToTensor()(Image.open(x).convert('RGB')))
 
         elif self.cache == 'bin':
             with open(x, 'rb') as f:
                 x = pickle.load(f)
             x = np.ascontiguousarray(x.transpose(2, 0, 1))
-            x = torch.from_numpy(x).float() / 255
+            #x = torch.from_numpy(x).float() / 255
+            x = jt.array(x).float32() / 255.0
             return x
 
         elif self.cache == 'in_memory':

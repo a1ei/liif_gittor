@@ -5,8 +5,12 @@ from PIL import Image
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset
-from torchvision import transforms
+# from torch.utils.data import Dataset
+# from torchvision import transforms
+from jittor.dataset import Dataset
+from jittor import transform
+import jittor as jt
+
 
 from datasets import register
 from utils import to_pixel_samples
@@ -16,6 +20,7 @@ from utils import to_pixel_samples
 class SRImplicitPaired(Dataset):
 
     def __init__(self, dataset, inp_size=None, augment=False, sample_q=None):
+        super().__init__()
         self.dataset = dataset
         self.inp_size = inp_size
         self.augment = augment
@@ -80,16 +85,14 @@ class SRImplicitPaired(Dataset):
 
 
 def resize_fn(img, size):
-    return transforms.ToTensor()(
-        transforms.Resize(size, Image.BICUBIC)(
-            transforms.ToPILImage()(img)))
-
+    return jt.array(transform.ToTensor()(transform.Resize(size)(img)))
 
 @register('sr-implicit-downsampled')
 class SRImplicitDownsampled(Dataset):
 
     def __init__(self, dataset, inp_size=None, scale_min=1, scale_max=None,
                  augment=False, sample_q=None):
+        super().__init__()
         self.dataset = dataset
         self.inp_size = inp_size
         self.scale_min = scale_min
@@ -110,7 +113,7 @@ class SRImplicitDownsampled(Dataset):
             h_lr = math.floor(img.shape[-2] / s + 1e-9)
             w_lr = math.floor(img.shape[-1] / s + 1e-9)
             img = img[:, :round(h_lr * s), :round(w_lr * s)] # assume round int
-            img_down = resize_fn(img, (h_lr, w_lr))
+            img_down = resize_fn(img.permute(1,2,0), (h_lr, w_lr))
             crop_lr, crop_hr = img_down, img
         else:
             w_lr = self.inp_size
@@ -118,7 +121,7 @@ class SRImplicitDownsampled(Dataset):
             x0 = random.randint(0, img.shape[-2] - w_hr)
             y0 = random.randint(0, img.shape[-1] - w_hr)
             crop_hr = img[:, x0: x0 + w_hr, y0: y0 + w_hr]
-            crop_lr = resize_fn(crop_hr, w_lr)
+            crop_lr = resize_fn(crop_hr.permute(1,2,0), w_lr)  #如果 img 是 np.ndarray，那么它的形状应该是 H × W × 3（通道在最后）
 
         if self.augment:
             hflip = random.random() < 0.5
@@ -145,7 +148,7 @@ class SRImplicitDownsampled(Dataset):
             hr_coord = hr_coord[sample_lst]
             hr_rgb = hr_rgb[sample_lst]
 
-        cell = torch.ones_like(hr_coord)
+        cell = jt.ones_like(hr_coord)
         cell[:, 0] *= 2 / crop_hr.shape[-2]
         cell[:, 1] *= 2 / crop_hr.shape[-1]
 

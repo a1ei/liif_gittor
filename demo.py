@@ -12,9 +12,9 @@ from test import batched_predict
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input', default='input.png')
-    parser.add_argument('--model')
-    parser.add_argument('--resolution')
+    parser.add_argument('--input', default='./images/input.png')
+    parser.add_argument('--model', default='./weights/edsr-baseline-liif.pth')
+    parser.add_argument('--resolution', default="1280,1280")
     parser.add_argument('--output', default='output.png')
     parser.add_argument('--gpu', default='0')
     args = parser.parse_args()

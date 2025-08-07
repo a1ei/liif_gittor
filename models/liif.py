@@ -1,6 +1,11 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+# import torch
+# import torch.nn as nn
+# import torch.nn.functional as F
+import jittor.nn as nn
+import jittor as jt
+import jittor.nn as F
+
+
 
 import models
 from models import register
@@ -81,22 +86,22 @@ class LIIF(nn.Module):
                 rel_coord = coord - q_coord
                 rel_coord[:, :, 0] *= feat.shape[-2]
                 rel_coord[:, :, 1] *= feat.shape[-1]
-                inp = torch.cat([q_feat, rel_coord], dim=-1)
+                inp = jt.concat([q_feat, rel_coord], dim=-1)
 
                 if self.cell_decode:
                     rel_cell = cell.clone()
                     rel_cell[:, :, 0] *= feat.shape[-2]
                     rel_cell[:, :, 1] *= feat.shape[-1]
-                    inp = torch.cat([inp, rel_cell], dim=-1)
+                    inp = jt.concat([inp, rel_cell], dim=-1)
 
                 bs, q = coord.shape[:2]
                 pred = self.imnet(inp.view(bs * q, -1)).view(bs, q, -1)
                 preds.append(pred)
 
-                area = torch.abs(rel_coord[:, :, 0] * rel_coord[:, :, 1])
+                area = jt.abs(rel_coord[:, :, 0] * rel_coord[:, :, 1])
                 areas.append(area + 1e-9)
 
-        tot_area = torch.stack(areas).sum(dim=0)
+        tot_area = jt.stack(areas).sum(dim=0)
         if self.local_ensemble:
             t = areas[0]; areas[0] = areas[3]; areas[3] = t
             t = areas[1]; areas[1] = areas[2]; areas[2] = t
@@ -105,6 +110,6 @@ class LIIF(nn.Module):
             ret = ret + pred * (area / tot_area).unsqueeze(-1)
         return ret
 
-    def forward(self, inp, coord, cell):
+    def execute(self, inp, coord, cell):
         self.gen_feat(inp)
         return self.query_rgb(coord, cell)

@@ -1,4 +1,5 @@
-import torch.nn as nn
+#import torch.nn as nn
+import jittor.nn as nn
 
 from models import register
 
@@ -17,7 +18,7 @@ class MLP(nn.Module):
         layers.append(nn.Linear(lastv, out_dim))
         self.layers = nn.Sequential(*layers)
 
-    def forward(self, x):
+    def execute(self, x):
         shape = x.shape[:-1]
         x = self.layers(x.view(-1, x.shape[-1]))
         return x.view(*shape, -1)

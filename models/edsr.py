@@ -3,56 +3,109 @@
 import math
 from argparse import Namespace
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+#————————————torch———————————————————
+# import torch
+# import torch.nn as nn
+# import torch.nn.functional as F
+#————————————————————————————————————
+#————————————————————————————————————
+import jittor as jt
+from jittor import nn
+#————————————————————————————————————
 
 from models import register
 
 
+# def default_conv(in_channels, out_channels, kernel_size, bias=True):
+#     return nn.Conv2d(
+#         in_channels, out_channels, kernel_size,
+#         padding=(kernel_size//2), bias=bias)
 def default_conv(in_channels, out_channels, kernel_size, bias=True):
-    return nn.Conv2d(
-        in_channels, out_channels, kernel_size,
-        padding=(kernel_size//2), bias=bias)
+    padding = kernel_size // 2
+    return nn.Conv(
+        in_channels=in_channels,
+        out_channels=out_channels,
+        kernel_size=kernel_size,
+        padding=padding,
+        bias=bias
+    )
 
-class MeanShift(nn.Conv2d):
+class MeanShift(nn.Module):
     def __init__(
         self, rgb_range,
         rgb_mean=(0.4488, 0.4371, 0.4040), rgb_std=(1.0, 1.0, 1.0), sign=-1):
 
-        super(MeanShift, self).__init__(3, 3, kernel_size=1)
-        std = torch.Tensor(rgb_std)
-        self.weight.data = torch.eye(3).view(3, 3, 1, 1) / std.view(3, 1, 1, 1)
-        self.bias.data = sign * rgb_range * torch.Tensor(rgb_mean) / std
-        for p in self.parameters():
-            p.requires_grad = False
+        super(MeanShift, self).__init__()
+        self.conv = nn.Conv(
+            in_channels=3, out_channels=3, kernel_size=1, bias=True
+        )
+        #std = torch.Tensor(rgb_std)
+        std = jt.array(rgb_std).reshape(3, 1, 1, 1)
+        #self.weight.data = torch.eye(3).view(3, 3, 1, 1) / std.view(3, 1, 1, 1)
+        self.weight = jt.array([
+            [1, 0, 0],
+            [0, 1, 0],
+            [0, 0, 1]
+        ], dtype=jt.float32).reshape(3, 3, 1, 1) / std.reshape(3, 1, 1, 1)
+        # self.bias.data = sign * rgb_range * torch.Tensor(rgb_mean) / std
+        self.bias = sign * rgb_range * jt.array(rgb_mean) / jt.array(rgb_std)
+
+        self.conv.weight.stop_grad()
+        self.conv.bias.stop_grad()
+
+        # 手动赋值
+        self.conv.weight.assign(self.weight)
+        self.conv.bias.assign(self.bias)
+    def execute(self,x):
+        return self.conv(x)
+
+# class ResBlock(nn.Module):
+#     def __init__(
+#         self, conv, n_feats, kernel_size,
+#         bias=True, bn=False, act=nn.ReLU(True), res_scale=1):
+#
+#         super(ResBlock, self).__init__()
+#         m = []
+#         for i in range(2):
+#             m.append(conv(n_feats, n_feats, kernel_size, bias=bias))
+#             if bn:
+#                 m.append(nn.BatchNorm2d(n_feats))
+#             if i == 0:
+#                 m.append(act)
+#
+#         self.body = nn.Sequential(*m)
+#         self.res_scale = res_scale
+#
+#     def forward(self, x):
+#         res = self.body(x).mul(self.res_scale)
+#         res += x
+#
+#         return res
 
 class ResBlock(nn.Module):
     def __init__(
         self, conv, n_feats, kernel_size,
-        bias=True, bn=False, act=nn.ReLU(True), res_scale=1):
-
-        super(ResBlock, self).__init__()
-        m = []
+        bias=True, bn=False, act=nn.ReLU(), res_scale=1.0
+    ):
+        super().__init__()
+        layers = []
         for i in range(2):
-            m.append(conv(n_feats, n_feats, kernel_size, bias=bias))
+            layers.append(conv(n_feats, n_feats, kernel_size, bias=bias))
             if bn:
-                m.append(nn.BatchNorm2d(n_feats))
+                layers.append(nn.BatchNorm(n_feats))
             if i == 0:
-                m.append(act)
+                layers.append(act)
 
-        self.body = nn.Sequential(*m)
+        self.body = nn.Sequential(layers)
         self.res_scale = res_scale
 
-    def forward(self, x):
-        res = self.body(x).mul(self.res_scale)
-        res += x
+    def execute(self, x):  # Jittor 中 forward 改为 execute
+        res = self.body(x) * self.res_scale
+        return res + x
 
-        return res
-
-class Upsampler(nn.Sequential):
+class Upsampler(nn.Module):
     def __init__(self, conv, scale, n_feats, bn=False, act=False, bias=True):
-
+        super(Upsampler, self).__init__()
         m = []
         if (scale & (scale - 1)) == 0:    # Is scale = 2^n?
             for _ in range(int(math.log(scale, 2))):
@@ -77,7 +130,11 @@ class Upsampler(nn.Sequential):
         else:
             raise NotImplementedError
 
-        super(Upsampler, self).__init__(*m)
+        self.body = nn.Sequential(*m)
+
+    def execute(self, x):
+        return self.body(x)
+
 
 
 url = {
@@ -97,7 +154,7 @@ class EDSR(nn.Module):
         n_feats = args.n_feats
         kernel_size = 3
         scale = args.scale[0]
-        act = nn.ReLU(True)
+        act = nn.ReLU()#删掉了True，不知道有什么影响，可能是决定是否是in_place
         url_name = 'r{}f{}x{}'.format(n_resblocks, n_feats, scale)
         if url_name in url:
             self.url = url[url_name]
@@ -119,19 +176,23 @@ class EDSR(nn.Module):
 
         self.head = nn.Sequential(*m_head)
         self.body = nn.Sequential(*m_body)
+        # self.head = nn.Sequential(m_head)
+        # self.body = nn.Sequential(m_body)
 
         if args.no_upsampling:
             self.out_dim = n_feats
         else:
             self.out_dim = args.n_colors
             # define tail module
+            #——————————————————————————————————————————————
             m_tail = [
                 Upsampler(conv, scale, n_feats, act=False),
                 conv(n_feats, args.n_colors, kernel_size)
             ]
+            #——————————————————————————————————————————————
             self.tail = nn.Sequential(*m_tail)
 
-    def forward(self, x):
+    def execute(self, x):
         #x = self.sub_mean(x)
         x = self.head(x)
 

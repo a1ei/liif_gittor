@@ -1,0 +1,39 @@
+train dataset: size=16000
+  inp: shape=(3, 48, 48)
+  coord: shape=(2304, 2)
+  cell: shape=(2304, 2)
+  gt: shape=(2304, 3)
+val dataset: size=1600
+  inp: shape=(3, 48, 48)
+  coord: shape=(2304, 2)
+  cell: shape=(2304, 2)
+  gt: shape=(2304, 3)
+model: #params=1.6M
+epoch 1/1000, train: loss=0.0807, val: psnr=27.0411, 1.3m 1.3m/21.9h
+epoch 2/1000, train: loss=0.0486, val: psnr=27.9734, 1.2m 2.5m/21.2h
+epoch 3/1000, train: loss=0.0443, val: psnr=27.7377, 1.2m 3.8m/20.9h
+epoch 4/1000, train: loss=0.0428, val: psnr=28.3503, 1.2m 5.0m/20.8h
+epoch 5/1000, train: loss=0.0417, val: psnr=28.5515, 1.2m 6.2m/20.7h
+epoch 6/1000, train: loss=0.0409, val: psnr=28.5624, 1.2m 7.4m/20.7h
+epoch 7/1000, train: loss=0.0401, val: psnr=29.1278, 1.2m 8.7m/20.6h
+epoch 8/1000, train: loss=0.0397, val: psnr=28.8056, 1.2m 9.9m/20.6h
+epoch 9/1000, train: loss=0.0388, val: psnr=28.9391, 1.2m 11.1m/20.6h
+epoch 10/1000, train: loss=0.0382, val: psnr=29.2455, 1.2m 12.3m/20.5h
+epoch 11/1000, train: loss=0.0379, val: psnr=28.9120, 1.2m 13.5m/20.5h
+epoch 12/1000, train: loss=0.0373, val: psnr=28.6913, 1.2m 14.8m/20.5h
+epoch 13/1000, train: loss=0.0370, val: psnr=29.2242, 1.2m 16.0m/20.5h
+epoch 14/1000, train: loss=0.0371, val: psnr=28.9058, 1.2m 17.2m/20.5h
+epoch 15/1000, train: loss=0.0367, val: psnr=28.9892, 1.2m 18.4m/20.5h
+epoch 16/1000, train: loss=0.0371, val: psnr=29.0440, 1.2m 19.6m/20.5h
+epoch 17/1000, train: loss=0.0366, val: psnr=29.1492, 1.2m 20.9m/20.5h
+epoch 18/1000, train: loss=0.0364, val: psnr=29.4549, 1.2m 22.1m/20.5h
+epoch 19/1000, train: loss=0.0359, val: psnr=29.0255, 1.2m 23.3m/20.5h
+epoch 20/1000, train: loss=0.0364, val: psnr=29.1965, 1.2m 24.5m/20.5h
+epoch 21/1000, train: loss=0.0359, val: psnr=29.2335, 1.2m 25.8m/20.4h
+epoch 22/1000, train: loss=0.0362, val: psnr=29.2130, 1.2m 27.0m/20.4h
+epoch 23/1000, train: loss=0.0357, val: psnr=29.3942, 1.2m 28.2m/20.4h
+epoch 24/1000, train: loss=0.0355, val: psnr=29.3504, 1.2m 29.4m/20.4h
+epoch 25/1000, train: loss=0.0356, val: psnr=29.2892, 1.2m 30.6m/20.4h
+epoch 26/1000, train: loss=0.0355, val: psnr=29.2044, 1.2m 31.9m/20.4h
+epoch 27/1000, train: loss=0.0354, val: psnr=29.4375, 1.2m 33.1m/20.4h
+epoch 28/1000, train: loss=0.0355, val: psnr=29.4190, 1.2m 34.3m/20.4h
