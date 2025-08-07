@@ -14,7 +14,7 @@ CVPR 2021
 <div align="center">Figure 1: Training loss curves of PyTorch and Jittor implementations (first 25 epochs).</div>
 As shown in Fig. 1, due to computational constraints, I only ran the training for 25 epochs. It can be observed 
 that the Jittor implementation converges faster than the official PyTorch version within this range. However, it is 
-likely that the PyTorch version would achieve much better performance if allowed to train for more epochs.
+likely that the PyTorch version would achieve the same performance if allowed to train for more epochs.
 
 ### Runtime Logs
 
